@@ -180,6 +180,69 @@ Hai lớp độc lập, không chỉ dựa vào một chỗ:
 
 Kiểm bằng payload `<img src=x onerror=alert(1)>` ở title/content/answer content.
 
+## Partner REST API v1
+
+Đang xây dần theo từng endpoint (FR-14 đến FR-17); phần dưới đây là **hợp đồng chung**, đã cố
+định và có code thật (`assessment_hub/api/utils.py`), không phụ thuộc endpoint nào.
+
+### Xác thực
+
+Header `Authorization: token <api_key>:<api_secret>`. Không có `allow_guest=True` ở bất kỳ
+endpoint nào — thiếu token bị Frappe từ chối như Guest không đủ quyền, sai token bị từ chối ở
+tầng xác thực trước khi vào code của app.
+
+```bash
+curl -H "Authorization: token <api_key>:<api_secret>" \
+  http://dev.localhost:8000/api/v2/method/assessment_hub.api.v1.assessments.list_assessments
+```
+
+Sinh API key/secret cho một user:
+
+```bash
+bench --site dev.localhost console
+```
+
+```python
+user = frappe.get_doc("User", "partner@example.com")
+api_secret = frappe.generate_hash(length=15)
+user.api_key = frappe.generate_hash(length=15)
+user.api_secret = api_secret
+user.save(ignore_permissions=True)
+frappe.db.commit()
+print(user.api_key, api_secret)  # api_secret chỉ hiện lúc này, không đọc lại được
+```
+
+### Định dạng response
+
+Thành công: HTTP 200, `{"data": ...}`. Thất bại: HTTP 4xx/5xx,
+`{"errors": [{"message": "...", "code": "..."}]}`. Mọi endpoint bọc bằng decorator
+`@api_response` (`api/utils.py`), tự bắt exception và dựng đúng hai dạng trên.
+
+| HTTP | code | Khi nào |
+| --- | --- | --- |
+| 400 | MISSING_REQUIRED_FIELD | Thiếu tham số bắt buộc |
+| 400 | INVALID_PARAMETER | Sai kiểu, sai enum, vượt giới hạn, sai định dạng ngày |
+| 400 | VALIDATION_ERROR | Vi phạm rule dữ liệu trong controller |
+| 401 | AUTHENTICATION_FAILED | Token sai/thiếu định dạng |
+| 403 | PERMISSION_DENIED | Không đủ quyền (kể cả gọi ẩn danh, xem giới hạn bên dưới) |
+| 404 | NOT_FOUND | Bản ghi không tồn tại |
+| 405 | METHOD_NOT_ALLOWED | Sai HTTP method |
+| 422 | ASSESSMENT_ARCHIVED | Thêm/sửa Question của Assessment đã Archived |
+| 500 | INTERNAL_ERROR | Lỗi không lường trước, đã ghi Error Log, không lộ traceback |
+
+### Giới hạn đã biết (R-02)
+
+Lỗi 401 (token sai) và 405 (sai HTTP method) phát sinh ở tầng xác thực/định tuyến của Frappe,
+**trước khi** request tới được `@api_response` — body trả về là định dạng lỗi mặc định của
+Frappe, không phải `{"errors": [...]}`. Đã kiểm chứng bằng `curl` thật: token sai trả về
+`{"exception": "...AuthenticationError", ...}` kèm traceback, không phải hai dòng
+`message`/`code` như các lỗi khác.
+
+**Thiếu token hẳn (không có header) trả 403, không phải 401** — request không có
+`Authorization` được Frappe xử lý như user `Guest`, và `Guest` không có quyền gọi endpoint
+không `allow_guest`, nên rơi vào `PermissionError` (403) chứ không phải `AuthenticationError`
+(401). Chỉ token **sai định dạng hoặc sai giá trị** mới ra đúng 401.
+
 ## License
 
 MIT, xem [license.txt](license.txt).

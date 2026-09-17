@@ -7,3 +7,11 @@ class InvalidStatusTransitionError(frappe.ValidationError):
 
 class AssessmentArchivedError(frappe.ValidationError):
 	pass
+
+
+class MissingRequiredFieldError(frappe.ValidationError):
+	pass
+
+
+class InvalidParameterError(frappe.ValidationError):
+	pass
