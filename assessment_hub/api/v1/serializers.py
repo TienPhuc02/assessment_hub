@@ -14,15 +14,19 @@ def serialize_assessment(row):
 	}
 
 
-def serialize_question(row, answers):
-	return {
+def serialize_question(row, answers=None):
+	data = {
 		"id": row.name,
 		"assessment_id": row.assessment,
 		"content": row.content,
 		"sort_order": row.sort_order,
 		"status": row.status,
-		"answers": [serialize_answer(answer) for answer in answers],
 	}
+
+	if answers is not None:
+		data["answers"] = [serialize_answer(answer) for answer in answers]
+
+	return data
 
 
 def serialize_answer(row):

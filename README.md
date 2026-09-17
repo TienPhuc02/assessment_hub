@@ -356,6 +356,40 @@ Lỗi mẫu khi một answer rỗng (`answers[1].content`):
 `field` trong response lỗi là 0-based (`answers[1]` = phần tử thứ 2), khác với chỉ số hiển thị
 trên Desk grid (1-based, "Row #2") — hai bối cảnh khác nhau, cùng một dòng dữ liệu.
 
+### Endpoint: `GET questions.list_questions`
+
+| Tham số | Bắt buộc | Mặc định | Quy tắc |
+| --- | --- | --- | --- |
+| `assessment_id` | Có | Không | Phải tồn tại và có quyền đọc, không thì 404/403 |
+| `status` | Không | Không | `Active` hoặc `Inactive` |
+| `page_length`, `start`, `page` | Không | Như `list_assessments` | Như `list_assessments` |
+
+```bash
+curl -H "Authorization: token <api_key>:<api_secret>" \
+  "http://dev.localhost:8000/api/v2/method/assessment_hub.api.v1.questions.list_questions?assessment_id=ASM-00001"
+```
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "QST-00001",
+        "assessment_id": "ASM-00001",
+        "content": "len([1, 2, 3])?",
+        "sort_order": 1,
+        "status": "Active"
+      }
+    ],
+    "pagination": {"start": 0, "page_length": 20, "has_more": false}
+  }
+}
+```
+
+Sort mặc định `sort_order ASC`, cùng `sort_order` thì `creation ASC`. `items` **không có**
+key `answers` (khác `get_assessment`/`create_question`) — muốn xem đáp án của một câu hỏi cụ
+thể, dùng `get_assessment?include_questions=1`.
+
 ## License
 
 MIT, xem [license.txt](license.txt).

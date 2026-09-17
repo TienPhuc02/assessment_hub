@@ -41,6 +41,49 @@ def create_question(assessment_id=None, content=None, sort_order=None, status=No
 	return serialize_question(doc, doc.answers)
 
 
+@frappe.whitelist(methods=["GET"])
+@api_response
+def list_questions(assessment_id=None, status=None, page_length=None, start=None, page=None):
+	assessment_id = require_str(assessment_id, "assessment_id")
+
+	assessment = frappe.get_doc("Assessment", assessment_id)
+	assessment.check_permission("read")
+
+	settings = frappe.get_cached_doc("Assessment Hub Settings")
+
+	status = parse_enum(status, "status", STATUS_OPTIONS)
+	page_length = parse_int(
+		page_length,
+		"page_length",
+		default=settings.default_page_length,
+		minimum=1,
+		maximum=settings.max_page_length,
+	)
+	page = parse_int(page, "page", minimum=1)
+	start = (page - 1) * page_length if page else parse_int(start, "start", default=0, minimum=0)
+
+	filters = {"assessment": assessment_id}
+	if status:
+		filters["status"] = status
+
+	rows = frappe.get_list(
+		"Question",
+		filters=filters,
+		fields=["name", "assessment", "content", "sort_order", "status"],
+		order_by="sort_order asc, creation asc",
+		offset=start,
+		limit=page_length + 1,
+	)
+
+	has_more = len(rows) > page_length
+	rows = rows[:page_length]
+
+	return {
+		"items": [serialize_question(row) for row in rows],
+		"pagination": {"start": start, "page_length": page_length, "has_more": has_more},
+	}
+
+
 def parse_answers(value):
 	if isinstance(value, str):
 		try:

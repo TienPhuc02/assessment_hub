@@ -4,7 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from assessment_hub.api.v1.assessments import get_assessment, list_assessments
-from assessment_hub.api.v1.questions import create_question
+from assessment_hub.api.v1.questions import create_question, list_questions
 
 VIEWER_EMAIL = "viewer@assessment-hub-test.local"
 
@@ -347,3 +347,77 @@ class TestCreateQuestion(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		frappe.delete_doc("Assessment", assessment.name, force=True, ignore_permissions=True)
 		frappe.db.commit()
+
+
+class TestListQuestions(IntegrationTestCase):
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def make_assessment(self, **kwargs):
+		values = {"doctype": "Assessment", "title": "Sample Assessment"}
+		values.update(kwargs)
+		return frappe.get_doc(values).insert()
+
+	def make_question(self, assessment, **kwargs):
+		values = {
+			"doctype": "Question",
+			"assessment": assessment,
+			"content": "Sample question",
+			"answers": [{"content": "Answer", "score": 1}],
+		}
+		values.update(kwargs)
+		return frappe.get_doc(values).insert()
+
+	def body(self, response):
+		return json.loads(response.get_data(as_text=True))
+
+	def test_missing_assessment_id_is_rejected(self):
+		response = list_questions()
+
+		self.assertEqual(response.status_code, 400)
+		error = self.body(response)["errors"][0]
+		self.assertEqual(error["code"], "MISSING_REQUIRED_FIELD")
+		self.assertEqual(error["field"], "assessment_id")
+
+	def test_nonexistent_assessment_id_is_not_found(self):
+		response = list_questions(assessment_id="ASM-DOES-NOT-EXIST")
+
+		self.assertEqual(response.status_code, 404)
+		self.assertEqual(self.body(response)["errors"][0]["code"], "NOT_FOUND")
+
+	def test_items_sorted_by_sort_order_then_creation(self):
+		assessment = self.make_assessment()
+		second = self.make_question(assessment.name, content="Second", sort_order=2)
+		first = self.make_question(assessment.name, content="First", sort_order=1)
+		tiebreak = self.make_question(assessment.name, content="Tiebreak", sort_order=1)
+
+		items = self.body(list_questions(assessment_id=assessment.name))["data"]["items"]
+
+		self.assertEqual([item["id"] for item in items], [first.name, tiebreak.name, second.name])
+
+	def test_items_do_not_include_answers(self):
+		assessment = self.make_assessment()
+		self.make_question(assessment.name)
+
+		items = self.body(list_questions(assessment_id=assessment.name))["data"]["items"]
+
+		self.assertNotIn("answers", items[0])
+
+	def test_filters_by_status(self):
+		assessment = self.make_assessment()
+		active = self.make_question(assessment.name, content="Active one")
+		self.make_question(assessment.name, content="Inactive one", status="Inactive")
+
+		items = self.body(list_questions(assessment_id=assessment.name, status="Active"))["data"]["items"]
+
+		self.assertEqual([item["id"] for item in items], [active.name])
+
+	def test_only_returns_questions_of_the_requested_assessment(self):
+		assessment = self.make_assessment()
+		other = self.make_assessment(title="Other Assessment")
+		question = self.make_question(assessment.name)
+		self.make_question(other.name)
+
+		items = self.body(list_questions(assessment_id=assessment.name))["data"]["items"]
+
+		self.assertEqual([item["id"] for item in items], [question.name])
