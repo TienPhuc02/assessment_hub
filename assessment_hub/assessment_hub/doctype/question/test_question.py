@@ -107,6 +107,16 @@ class TestQuestion(IntegrationTestCase):
 	def test_suggested_sort_order_without_assessment_is_one(self):
 		self.assertEqual(get_suggested_sort_order(None), 1)
 
+	def test_content_with_html_payload_is_sanitized(self):
+		doc = self.make(content="What is 2 + 2? <img src=x onerror=alert(1)>")
+		self.assertIn("What is 2 + 2?", doc.content)
+		self.assertNotIn("onerror", doc.content)
+
+	def test_answer_content_with_html_payload_is_sanitized(self):
+		doc = self.make(answers=[{"content": "4 <img src=x onerror=alert(1)>", "score": 1, "sort_order": 1}])
+		self.assertIn("4", doc.answers[0].content)
+		self.assertNotIn("onerror", doc.answers[0].content)
+
 	def test_cannot_add_question_to_archived_assessment(self):
 		self.assessment.archive()
 

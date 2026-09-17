@@ -89,6 +89,11 @@ class TestAssessment(IntegrationTestCase):
 		frappe.delete_doc("Assessment", doc.name, force=True, ignore_permissions=True)
 		frappe.db.commit()
 
+	def test_title_with_html_payload_is_sanitized(self):
+		doc = self.make(title="Python Basics <img src=x onerror=alert(1)>")
+		self.assertIn("Python Basics", doc.title)
+		self.assertNotIn("onerror", doc.title)
+
 	def test_cannot_delete_assessment_with_questions(self):
 		doc = self.make()
 		frappe.get_doc(

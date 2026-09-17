@@ -165,6 +165,21 @@ của Question nữa.
 
 **Đánh đổi.** Phải kiểm tra Link và phân quyền ở cả hai DocType thay vì một.
 
+## Chống XSS trên Desk
+
+Hai lớp độc lập, không chỉ dựa vào một chỗ:
+
+1. **Server (Frappe core, không phải code của app).** Mọi field kiểu Data/Small Text/Text
+   (trừ Email, Attach, Barcode, Code) tự động chạy qua `sanitize_html()` trước khi ghi vào
+   database (`Document._validate()` → `_sanitize_content()`), xoá attribute như `onerror`,
+   `onclick` bằng allowlist. `title`, `content` (Question/Answer) đều thuộc nhóm này — đây là
+   lý do ADR-04 chọn Small Text thay vì Text Editor.
+2. **Client (`assessment.js`).** Giá trị người dùng ghép vào `frappe.confirm`/`__()` (ví dụ
+   title khi hỏi xác nhận Publish/Archive) đi qua `frappe.utils.escape_html()` trước, vì `__()`
+   không tự escape tham số.
+
+Kiểm bằng payload `<img src=x onerror=alert(1)>` ở title/content/answer content.
+
 ## License
 
 MIT, xem [license.txt](license.txt).
