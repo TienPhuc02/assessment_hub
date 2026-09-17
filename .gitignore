@@ -1,0 +1,28 @@
+# Python
+*.pyc
+*.pyo
+__pycache__/
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+.yarn/
+
+# Frappe / bench artifacts
+*.log
+*.sql
+*.sql.gz
+site_config.json
+backups/
+assessment_hub/public/dist/
+
+# Secrets & local env
+.env
+*.pem
+*.key
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
