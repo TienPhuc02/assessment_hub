@@ -3,7 +3,7 @@ import json
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from assessment_hub.api.v1.assessments import list_assessments
+from assessment_hub.api.v1.assessments import get_assessment, list_assessments
 
 
 class TestListAssessments(IntegrationTestCase):
@@ -101,3 +101,91 @@ class TestListAssessments(IntegrationTestCase):
 
 		self.assertNotIn(old.name, ids)
 		self.assertIn(new.name, ids)
+
+
+class TestGetAssessment(IntegrationTestCase):
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def make_assessment(self, **kwargs):
+		values = {"doctype": "Assessment", "title": "Sample Assessment"}
+		values.update(kwargs)
+		return frappe.get_doc(values).insert()
+
+	def make_question(self, assessment, **kwargs):
+		values = {
+			"doctype": "Question",
+			"assessment": assessment,
+			"content": "Sample question",
+			"answers": [{"content": "Answer", "score": 1}],
+		}
+		values.update(kwargs)
+		return frappe.get_doc(values).insert()
+
+	def body(self, response):
+		return json.loads(response.get_data(as_text=True))
+
+	def test_missing_id_is_rejected(self):
+		response = get_assessment()
+
+		self.assertEqual(response.status_code, 400)
+		self.assertEqual(self.body(response)["errors"][0]["code"], "MISSING_REQUIRED_FIELD")
+
+	def test_nonexistent_id_is_not_found(self):
+		response = get_assessment(id="ASM-DOES-NOT-EXIST")
+
+		self.assertEqual(response.status_code, 404)
+		self.assertEqual(self.body(response)["errors"][0]["code"], "NOT_FOUND")
+
+	def test_without_include_questions_has_no_questions_key(self):
+		assessment = self.make_assessment()
+
+		data = self.body(get_assessment(id=assessment.name))["data"]
+
+		self.assertNotIn("questions", data)
+
+	def test_include_questions_zero_has_no_questions_key(self):
+		assessment = self.make_assessment()
+
+		data = self.body(get_assessment(id=assessment.name, include_questions="0"))["data"]
+
+		self.assertNotIn("questions", data)
+
+	def test_invalid_include_questions_is_rejected(self):
+		assessment = self.make_assessment()
+
+		response = get_assessment(id=assessment.name, include_questions="yes")
+
+		self.assertEqual(response.status_code, 400)
+		self.assertEqual(self.body(response)["errors"][0]["code"], "INVALID_PARAMETER")
+
+	def test_include_questions_nests_questions_and_answers_in_order(self):
+		assessment = self.make_assessment()
+		first = self.make_question(
+			assessment.name,
+			content="First",
+			answers=[{"content": "B", "score": 0, "sort_order": 2}, {"content": "A", "score": 1, "sort_order": 1}],
+		)
+		second = self.make_question(assessment.name, content="Second")
+
+		data = self.body(get_assessment(id=assessment.name, include_questions="1"))["data"]
+
+		self.assertEqual([q["id"] for q in data["questions"]], [first.name, second.name])
+		self.assertEqual(
+			[a["content"] for a in data["questions"][0]["answers"]],
+			["A", "B"],
+		)
+
+	def test_question_payload_shape(self):
+		assessment = self.make_assessment()
+		question = self.make_question(assessment.name)
+
+		data = self.body(get_assessment(id=assessment.name, include_questions="1"))["data"]
+		item = data["questions"][0]
+
+		self.assertEqual(item["id"], question.name)
+		self.assertEqual(item["assessment_id"], assessment.name)
+		self.assertEqual(item["content"], "Sample question")
+		self.assertEqual(item["status"], "Active")
+		answer = item["answers"][0]
+		self.assertEqual(set(answer), {"id", "content", "score", "sort_order"})

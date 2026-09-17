@@ -3,9 +3,11 @@ from frappe import _
 
 from assessment_hub.api.utils import (
 	api_response,
+	parse_bool,
 	parse_datetime,
 	parse_enum,
 	parse_int,
+	require_str,
 	to_iso8601,
 )
 from assessment_hub.exceptions import InvalidParameterError
@@ -61,6 +63,81 @@ def list_assessments(status=None, search=None, updated_since=None, page_length=N
 	return {
 		"items": [serialize_assessment(row) for row in rows],
 		"pagination": {"start": start, "page_length": page_length, "has_more": has_more},
+	}
+
+
+@frappe.whitelist(methods=["GET"])
+@api_response
+def get_assessment(id=None, include_questions=None):
+	id = require_str(id, "id")
+	include_questions = parse_bool(include_questions, "include_questions", default=False)
+
+	doc = frappe.get_doc("Assessment", id)
+	doc.check_permission("read")
+
+	result = serialize_assessment(doc)
+
+	if include_questions:
+		result["questions"] = get_questions_with_answers(id)
+
+	return result
+
+
+def get_questions_with_answers(assessment_id):
+	questions = frappe.get_list(
+		"Question",
+		filters={"assessment": assessment_id},
+		fields=["name", "assessment", "content", "sort_order", "status"],
+		order_by="sort_order asc, creation asc",
+	)
+
+	if not questions:
+		return []
+
+	answers_by_question = get_answers_by_question([question.name for question in questions])
+
+	return [
+		serialize_question(question, answers_by_question.get(question.name, [])) for question in questions
+	]
+
+
+def get_answers_by_question(question_names):
+	answer = frappe.qb.DocType("Answer")
+
+	rows = (
+		frappe.qb.from_(answer)
+		.select(answer.name, answer.parent, answer.content, answer.score, answer.sort_order)
+		.where(answer.parenttype == "Question")
+		.where(answer.parent.isin(question_names))
+		.orderby(answer.parent)
+		.orderby(answer.sort_order)
+		.run(as_dict=True)
+	)
+
+	answers_by_question = {}
+	for row in rows:
+		answers_by_question.setdefault(row.parent, []).append(row)
+
+	return answers_by_question
+
+
+def serialize_question(row, answers):
+	return {
+		"id": row.name,
+		"assessment_id": row.assessment,
+		"content": row.content,
+		"sort_order": row.sort_order,
+		"status": row.status,
+		"answers": [serialize_answer(answer) for answer in answers],
+	}
+
+
+def serialize_answer(row):
+	return {
+		"id": row.name,
+		"content": row.content,
+		"score": row.score,
+		"sort_order": row.sort_order,
 	}
 
 

@@ -280,6 +280,47 @@ curl -H "Authorization: token <api_key>:<api_secret>" \
 Không có `total` trong `pagination` — đó là FR-19 (Could, mở rộng), cố tình chưa làm để giữ
 đúng kỹ thuật "lấy `page_length + 1` bản ghi suy ra `has_more`" (không cần query COUNT riêng).
 
+### Endpoint: `GET assessments.get_assessment`
+
+| Tham số | Bắt buộc | Mặc định | Quy tắc |
+| --- | --- | --- | --- |
+| `id` | Có | Không | Phải tồn tại và có quyền đọc, không thì 404/403 |
+| `include_questions` | Không | `0` | `0`/`1`/`true`/`false`; giá trị khác → 400 |
+
+```bash
+curl -H "Authorization: token <api_key>:<api_secret>" \
+  "http://dev.localhost:8000/api/v2/method/assessment_hub.api.v1.assessments.get_assessment?id=ASM-00001&include_questions=1"
+```
+
+```json
+{
+  "data": {
+    "id": "ASM-00001",
+    "title": "Python Fundamentals",
+    "description": null,
+    "status": "Published",
+    "created_at": "2026-09-15T09:12:03+07:00",
+    "updated_at": "2026-09-16T14:30:45+07:00",
+    "questions": [
+      {
+        "id": "QST-00001",
+        "assessment_id": "ASM-00001",
+        "content": "len([1, 2, 3])?",
+        "sort_order": 1,
+        "status": "Active",
+        "answers": [
+          {"id": "a1b2c3d4e5", "content": "3", "score": 1.0, "sort_order": 1},
+          {"id": "f6g7h8i9j0", "content": "2", "score": 0.0, "sort_order": 2}
+        ]
+      }
+    ]
+  }
+}
+```
+
+`questions` chỉ xuất hiện khi `include_questions=1`. Answers của toàn bộ câu hỏi lấy bằng
+**một** truy vấn `frappe.qb` (`parent IN (...)`), không lặp truy vấn theo từng câu hỏi.
+
 ## License
 
 MIT, xem [license.txt](license.txt).
