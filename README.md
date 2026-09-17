@@ -321,6 +321,41 @@ curl -H "Authorization: token <api_key>:<api_secret>" \
 `questions` chỉ xuất hiện khi `include_questions=1`. Answers của toàn bộ câu hỏi lấy bằng
 **một** truy vấn `frappe.qb` (`parent IN (...)`), không lặp truy vấn theo từng câu hỏi.
 
+### Endpoint: `POST questions.create_question`
+
+| Field | Bắt buộc | Mặc định | Quy tắc |
+| --- | --- | --- | --- |
+| `assessment_id` | Có | Không | Phải tồn tại (404) và không Archived (422) |
+| `content` | Có | Không | Không rỗng sau trim, tối đa 10.000 ký tự |
+| `sort_order` | Không | max hiện có + 1 | ≥ 0 |
+| `status` | Không | Lấy từ Assessment Hub Settings | `Active` hoặc `Inactive` |
+| `answers` | Có | Không | Mảng 1–50 phần tử |
+| `answers[].content` | Có | Không | Không rỗng sau trim |
+| `answers[].score` | Có | Không | Số hữu hạn, không nhận boolean |
+| `answers[].sort_order` | Không | Vị trí trong mảng + 1 | ≥ 0 |
+
+Chỉ Assessment Manager mới tạo được (403 nếu không đủ quyền). Question và toàn bộ Answer ghi
+trong đúng 1 `doc.insert()` — không có Question thiếu Answer nửa chừng nếu có lỗi giữa chừng.
+
+```bash
+curl -X POST -H "Authorization: token <api_key>:<api_secret>" -H "Content-Type: application/json" \
+  -d '{"assessment_id":"ASM-00001","content":"2 + 2 = ?","answers":[{"content":"4","score":1},{"content":"5","score":0}]}' \
+  "http://dev.localhost:8000/api/v2/method/assessment_hub.api.v1.questions.create_question"
+```
+
+Lỗi mẫu khi một answer rỗng (`answers[1].content`):
+
+```json
+{
+  "errors": [
+    {"message": "Answer content is required", "code": "MISSING_REQUIRED_FIELD", "field": "answers[1].content"}
+  ]
+}
+```
+
+`field` trong response lỗi là 0-based (`answers[1]` = phần tử thứ 2), khác với chỉ số hiển thị
+trên Desk grid (1-based, "Row #2") — hai bối cảnh khác nhau, cùng một dòng dữ liệu.
+
 ## License
 
 MIT, xem [license.txt](license.txt).

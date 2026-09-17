@@ -39,7 +39,18 @@ class TestApiResponse(IntegrationTestCase):
 		response = handler()
 
 		self.assertEqual(response.status_code, 400)
-		self.assertEqual(self.get_body(response)["errors"][0]["code"], "MISSING_REQUIRED_FIELD")
+		error = self.get_body(response)["errors"][0]
+		self.assertEqual(error["code"], "MISSING_REQUIRED_FIELD")
+		self.assertEqual(error["field"], "content")
+
+	def test_generic_exception_has_no_field_key(self):
+		@api_response
+		def handler():
+			frappe.throw("nope", frappe.ValidationError)
+
+		response = handler()
+
+		self.assertNotIn("field", self.get_body(response)["errors"][0])
 
 	def test_invalid_parameter_maps_to_400(self):
 		@api_response

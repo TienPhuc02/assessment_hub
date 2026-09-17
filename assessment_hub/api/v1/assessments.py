@@ -8,8 +8,8 @@ from assessment_hub.api.utils import (
 	parse_enum,
 	parse_int,
 	require_str,
-	to_iso8601,
 )
+from assessment_hub.api.v1.serializers import get_answers_by_question, serialize_assessment, serialize_question
 from assessment_hub.exceptions import InvalidParameterError
 
 STATUS_OPTIONS = ("Draft", "Published", "Archived")
@@ -101,46 +101,6 @@ def get_questions_with_answers(assessment_id):
 	]
 
 
-def get_answers_by_question(question_names):
-	answer = frappe.qb.DocType("Answer")
-
-	rows = (
-		frappe.qb.from_(answer)
-		.select(answer.name, answer.parent, answer.content, answer.score, answer.sort_order)
-		.where(answer.parenttype == "Question")
-		.where(answer.parent.isin(question_names))
-		.orderby(answer.parent)
-		.orderby(answer.sort_order)
-		.run(as_dict=True)
-	)
-
-	answers_by_question = {}
-	for row in rows:
-		answers_by_question.setdefault(row.parent, []).append(row)
-
-	return answers_by_question
-
-
-def serialize_question(row, answers):
-	return {
-		"id": row.name,
-		"assessment_id": row.assessment,
-		"content": row.content,
-		"sort_order": row.sort_order,
-		"status": row.status,
-		"answers": [serialize_answer(answer) for answer in answers],
-	}
-
-
-def serialize_answer(row):
-	return {
-		"id": row.name,
-		"content": row.content,
-		"score": row.score,
-		"sort_order": row.sort_order,
-	}
-
-
 def parse_search(value):
 	if not value:
 		return None
@@ -156,14 +116,3 @@ def parse_search(value):
 		)
 
 	return value
-
-
-def serialize_assessment(row):
-	return {
-		"id": row.name,
-		"title": row.title,
-		"description": row.description,
-		"status": row.status,
-		"created_at": to_iso8601(row.creation),
-		"updated_at": to_iso8601(row.modified),
-	}

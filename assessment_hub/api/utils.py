@@ -26,10 +26,12 @@ ERROR_STATUS_CODES = {
 def api_response(fn):
 	@functools.wraps(fn)
 	def wrapper(*args, **kwargs):
+		frappe.db.savepoint("api_response")
+
 		try:
 			result = fn(*args, **kwargs)
 		except Exception as exc:
-			frappe.db.rollback()
+			frappe.db.rollback(save_point="api_response")
 			return build_error_response(exc)
 
 		return build_json_response({"data": result}, 200)
@@ -48,8 +50,19 @@ def build_error_response(exc):
 		)
 
 	status_code, code = resolved
+	error = {"message": str(exc), "code": code}
 
-	return build_json_response({"errors": [{"message": str(exc), "code": code}]}, status_code)
+	field = getattr(exc, "field", None)
+	if field:
+		error["field"] = field
+
+	return build_json_response({"errors": [error]}, status_code)
+
+
+def raise_error(exc_class, message, field=None):
+	error = exc_class(message)
+	error.field = field
+	raise error
 
 
 def resolve_error(exc):
@@ -66,19 +79,21 @@ def build_json_response(payload, status_code):
 
 def require_str(value, field, *, max_length=None):
 	if value is None or value == "":
-		frappe.throw(_("{0} is required.").format(field), MissingRequiredFieldError)
+		raise_error(MissingRequiredFieldError, _("{0} is required.").format(field), field)
 
 	if not isinstance(value, str):
-		frappe.throw(_("{0} must be a string.").format(field), InvalidParameterError)
+		raise_error(InvalidParameterError, _("{0} must be a string.").format(field), field)
 
 	value = value.strip()
 
 	if not value:
-		frappe.throw(_("{0} is required.").format(field), MissingRequiredFieldError)
+		raise_error(MissingRequiredFieldError, _("{0} is required.").format(field), field)
 
 	if max_length and len(value) > max_length:
-		frappe.throw(
-			_("{0} cannot be longer than {1} characters.").format(field, max_length), InvalidParameterError
+		raise_error(
+			InvalidParameterError,
+			_("{0} cannot be longer than {1} characters.").format(field, max_length),
+			field,
 		)
 
 	return value
@@ -87,22 +102,22 @@ def require_str(value, field, *, max_length=None):
 def parse_int(value, field, *, required=False, default=None, minimum=None, maximum=None):
 	if value is None or value == "":
 		if required:
-			frappe.throw(_("{0} is required.").format(field), MissingRequiredFieldError)
+			raise_error(MissingRequiredFieldError, _("{0} is required.").format(field), field)
 		return default
 
 	if isinstance(value, bool) or not isinstance(value, (int, str)):
-		frappe.throw(_("{0} must be an integer.").format(field), InvalidParameterError)
+		raise_error(InvalidParameterError, _("{0} must be an integer.").format(field), field)
 
 	try:
 		value = int(value)
 	except ValueError:
-		frappe.throw(_("{0} must be an integer.").format(field), InvalidParameterError)
+		raise_error(InvalidParameterError, _("{0} must be an integer.").format(field), field)
 
 	if minimum is not None and value < minimum:
-		frappe.throw(_("{0} must be at least {1}.").format(field, minimum), InvalidParameterError)
+		raise_error(InvalidParameterError, _("{0} must be at least {1}.").format(field, minimum), field)
 
 	if maximum is not None and value > maximum:
-		frappe.throw(_("{0} must be at most {1}.").format(field, maximum), InvalidParameterError)
+		raise_error(InvalidParameterError, _("{0} must be at most {1}.").format(field, maximum), field)
 
 	return value
 
@@ -112,8 +127,8 @@ def parse_enum(value, field, options, *, default=None):
 		return default
 
 	if value not in options:
-		frappe.throw(
-			_("{0} must be one of {1}.").format(field, ", ".join(options)), InvalidParameterError
+		raise_error(
+			InvalidParameterError, _("{0} must be one of {1}.").format(field, ", ".join(options)), field
 		)
 
 	return value
@@ -135,7 +150,7 @@ def parse_bool(value, field, *, default=False):
 		if normalized in ("0", "false"):
 			return False
 
-	frappe.throw(_("{0} must be a boolean.").format(field), InvalidParameterError)
+	raise_error(InvalidParameterError, _("{0} must be a boolean.").format(field), field)
 
 
 def parse_datetime(value, field):
@@ -145,8 +160,10 @@ def parse_datetime(value, field):
 	try:
 		return get_datetime(value)
 	except (ValueError, TypeError):
-		frappe.throw(
-			_("{0} must be a valid ISO 8601 or YYYY-MM-DD date.").format(field), InvalidParameterError
+		raise_error(
+			InvalidParameterError,
+			_("{0} must be a valid ISO 8601 or YYYY-MM-DD date.").format(field),
+			field,
 		)
 
 

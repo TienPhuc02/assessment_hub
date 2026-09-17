@@ -4,6 +4,9 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from assessment_hub.api.v1.assessments import get_assessment, list_assessments
+from assessment_hub.api.v1.questions import create_question
+
+VIEWER_EMAIL = "viewer@assessment-hub-test.local"
 
 
 class TestListAssessments(IntegrationTestCase):
@@ -189,3 +192,158 @@ class TestGetAssessment(IntegrationTestCase):
 		self.assertEqual(item["status"], "Active")
 		answer = item["answers"][0]
 		self.assertEqual(set(answer), {"id", "content", "score", "sort_order"})
+
+
+class TestCreateQuestion(IntegrationTestCase):
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.rollback()
+
+	def make_assessment(self, **kwargs):
+		values = {"doctype": "Assessment", "title": "Sample Assessment"}
+		values.update(kwargs)
+		return frappe.get_doc(values).insert()
+
+	def body(self, response):
+		return json.loads(response.get_data(as_text=True))
+
+	def test_valid_request_creates_question_and_answers(self):
+		assessment = self.make_assessment()
+
+		response = create_question(
+			assessment_id=assessment.name,
+			content="What is 2 + 2?",
+			answers=[{"content": "4", "score": 1}, {"content": "5", "score": 0}, {"content": "3", "score": 0}],
+		)
+
+		self.assertEqual(response.status_code, 200)
+		data = self.body(response)["data"]
+		self.assertEqual(data["assessment_id"], assessment.name)
+		self.assertEqual(len(data["answers"]), 3)
+		self.assertEqual(frappe.db.count("Question", {"assessment": assessment.name}), 1)
+		self.assertEqual(frappe.db.count("Answer", {"parent": data["id"]}), 3)
+
+	def test_empty_answer_content_is_rejected_and_nothing_persisted(self):
+		assessment = self.make_assessment()
+
+		response = create_question(
+			assessment_id=assessment.name,
+			content="Bad question",
+			answers=[{"content": "ok", "score": 1}, {"content": "   ", "score": 0}],
+		)
+
+		self.assertEqual(response.status_code, 400)
+		error = self.body(response)["errors"][0]
+		self.assertEqual(error["code"], "MISSING_REQUIRED_FIELD")
+		self.assertEqual(error["field"], "answers[1].content")
+		self.assertEqual(frappe.db.count("Question", {"assessment": assessment.name}), 0)
+
+	def test_answer_score_boolean_is_rejected_with_field(self):
+		assessment = self.make_assessment()
+
+		response = create_question(
+			assessment_id=assessment.name, content="Bad score", answers=[{"content": "x", "score": True}]
+		)
+
+		self.assertEqual(response.status_code, 400)
+		error = self.body(response)["errors"][0]
+		self.assertEqual(error["code"], "INVALID_PARAMETER")
+		self.assertEqual(error["field"], "answers[0].score")
+
+	def test_answers_empty_is_rejected(self):
+		assessment = self.make_assessment()
+
+		response = create_question(assessment_id=assessment.name, content="x", answers=[])
+
+		self.assertEqual(response.status_code, 400)
+		self.assertEqual(self.body(response)["errors"][0]["field"], "answers")
+
+	def test_answers_not_an_array_is_rejected(self):
+		assessment = self.make_assessment()
+
+		response = create_question(assessment_id=assessment.name, content="x", answers="not-json-and-not-a-list")
+
+		self.assertEqual(response.status_code, 400)
+		self.assertEqual(self.body(response)["errors"][0]["code"], "INVALID_PARAMETER")
+
+	def test_answers_as_json_string_is_parsed(self):
+		assessment = self.make_assessment()
+
+		response = create_question(
+			assessment_id=assessment.name, content="x", answers=json.dumps([{"content": "y", "score": 1}])
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(len(self.body(response)["data"]["answers"]), 1)
+
+	def test_archived_assessment_is_rejected(self):
+		assessment = self.make_assessment()
+		assessment.archive()
+
+		response = create_question(
+			assessment_id=assessment.name, content="x", answers=[{"content": "y", "score": 1}]
+		)
+
+		self.assertEqual(response.status_code, 422)
+		self.assertEqual(self.body(response)["errors"][0]["code"], "ASSESSMENT_ARCHIVED")
+
+	def test_nonexistent_assessment_is_not_found(self):
+		response = create_question(
+			assessment_id="ASM-DOES-NOT-EXIST", content="x", answers=[{"content": "y", "score": 1}]
+		)
+
+		self.assertEqual(response.status_code, 404)
+		self.assertEqual(self.body(response)["errors"][0]["code"], "NOT_FOUND")
+
+	def test_missing_assessment_id_is_rejected(self):
+		response = create_question(content="x", answers=[{"content": "y", "score": 1}])
+
+		self.assertEqual(response.status_code, 400)
+		self.assertEqual(self.body(response)["errors"][0]["field"], "assessment_id")
+
+	def test_sort_order_defaults_to_next_when_omitted(self):
+		assessment = self.make_assessment()
+		create_question(assessment_id=assessment.name, content="First", answers=[{"content": "a", "score": 1}])
+
+		response = create_question(
+			assessment_id=assessment.name, content="Second", answers=[{"content": "b", "score": 1}]
+		)
+
+		self.assertEqual(self.body(response)["data"]["sort_order"], 2)
+
+	def test_status_defaults_from_settings_when_omitted(self):
+		assessment = self.make_assessment()
+
+		response = create_question(
+			assessment_id=assessment.name, content="x", answers=[{"content": "y", "score": 1}]
+		)
+
+		self.assertEqual(self.body(response)["data"]["status"], "Active")
+
+	def test_viewer_cannot_create_question(self):
+		assessment = self.make_assessment()
+		frappe.db.commit()
+
+		if not frappe.db.exists("User", VIEWER_EMAIL):
+			frappe.get_doc(
+				{
+					"doctype": "User",
+					"email": VIEWER_EMAIL,
+					"first_name": "Assessment Viewer",
+					"send_welcome_email": 0,
+					"roles": [{"role": "Assessment Viewer"}],
+				}
+			).insert(ignore_permissions=True)
+			frappe.db.commit()
+
+		frappe.set_user(VIEWER_EMAIL)
+		response = create_question(
+			assessment_id=assessment.name, content="x", answers=[{"content": "y", "score": 1}]
+		)
+
+		self.assertEqual(response.status_code, 403)
+		self.assertEqual(self.body(response)["errors"][0]["code"], "PERMISSION_DENIED")
+
+		frappe.set_user("Administrator")
+		frappe.delete_doc("Assessment", assessment.name, force=True, ignore_permissions=True)
+		frappe.db.commit()
