@@ -47,6 +47,7 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Sort Order",
+   "non_negative": 1,
    "reqd": 1
   },
   {
