@@ -145,9 +145,12 @@ class TestRequireStr(IntegrationTestCase):
 
 
 class TestParseInt(IntegrationTestCase):
-	def test_missing_without_default_is_missing(self):
+	def test_missing_and_required_is_missing(self):
 		with self.assertRaises(MissingRequiredFieldError):
-			parse_int(None, "page_length")
+			parse_int(None, "page_length", required=True)
+
+	def test_missing_and_optional_returns_none(self):
+		self.assertIsNone(parse_int(None, "page"))
 
 	def test_missing_with_default_returns_default(self):
 		self.assertEqual(parse_int(None, "page_length", default=20), 20)

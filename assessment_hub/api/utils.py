@@ -1,8 +1,9 @@
 import functools
+from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
-from frappe.utils import get_datetime
+from frappe.utils import get_datetime, get_system_timezone
 from werkzeug.wrappers import Response
 
 from assessment_hub.exceptions import (
@@ -83,9 +84,9 @@ def require_str(value, field, *, max_length=None):
 	return value
 
 
-def parse_int(value, field, *, default=None, minimum=None, maximum=None):
+def parse_int(value, field, *, required=False, default=None, minimum=None, maximum=None):
 	if value is None or value == "":
-		if default is None:
+		if required:
 			frappe.throw(_("{0} is required.").format(field), MissingRequiredFieldError)
 		return default
 
@@ -147,3 +148,12 @@ def parse_datetime(value, field):
 		frappe.throw(
 			_("{0} must be a valid ISO 8601 or YYYY-MM-DD date.").format(field), InvalidParameterError
 		)
+
+
+def to_iso8601(value):
+	if value is None:
+		return None
+
+	dt = get_datetime(value).replace(microsecond=0, tzinfo=ZoneInfo(get_system_timezone()))
+
+	return dt.isoformat()

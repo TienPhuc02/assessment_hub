@@ -243,6 +243,43 @@ Frappe, không phải `{"errors": [...]}`. Đã kiểm chứng bằng `curl` th�
 không `allow_guest`, nên rơi vào `PermissionError` (403) chứ không phải `AuthenticationError`
 (401). Chỉ token **sai định dạng hoặc sai giá trị** mới ra đúng 401.
 
+### Endpoint: `GET assessments.list_assessments`
+
+| Tham số | Bắt buộc | Mặc định | Quy tắc |
+| --- | --- | --- | --- |
+| `status` | Không | Không | `Draft`, `Published` hoặc `Archived` |
+| `search` | Không | Không | Tìm trong `title`, không phân biệt hoa thường, tối đa 140 ký tự |
+| `updated_since` | Không | Không | ISO 8601 hoặc `YYYY-MM-DD`; lọc `modified >=`, đổi sort sang tăng dần |
+| `page_length` | Không | 20 (Settings) | 1–100 (trần từ Settings) |
+| `start` | Không | 0 | ≥ 0, bỏ qua nếu có `page` |
+| `page` | Không | Không | ≥ 1, ưu tiên hơn `start` |
+
+```bash
+curl -H "Authorization: token <api_key>:<api_secret>" \
+  "http://dev.localhost:8000/api/v2/method/assessment_hub.api.v1.assessments.list_assessments?status=Published&page=1&page_length=10"
+```
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "ASM-00001",
+        "title": "Python Fundamentals",
+        "description": null,
+        "status": "Published",
+        "created_at": "2026-09-15T09:12:03+07:00",
+        "updated_at": "2026-09-16T14:30:45+07:00"
+      }
+    ],
+    "pagination": {"start": 0, "page_length": 10, "has_more": false}
+  }
+}
+```
+
+Không có `total` trong `pagination` — đó là FR-19 (Could, mở rộng), cố tình chưa làm để giữ
+đúng kỹ thuật "lấy `page_length + 1` bản ghi suy ra `has_more`" (không cần query COUNT riêng).
+
 ## License
 
 MIT, xem [license.txt](license.txt).
