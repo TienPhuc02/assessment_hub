@@ -2,6 +2,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from assessment_hub.assessment_hub.doctype.question.question import get_suggested_sort_order
+from assessment_hub.exceptions import AssessmentArchivedError
 
 
 class TestQuestion(IntegrationTestCase):
@@ -105,3 +106,26 @@ class TestQuestion(IntegrationTestCase):
 
 	def test_suggested_sort_order_without_assessment_is_one(self):
 		self.assertEqual(get_suggested_sort_order(None), 1)
+
+	def test_cannot_add_question_to_archived_assessment(self):
+		self.assessment.archive()
+
+		with self.assertRaises(AssessmentArchivedError):
+			self.make()
+
+	def test_cannot_modify_question_of_archived_assessment(self):
+		doc = self.make()
+		self.assessment.archive()
+
+		doc.content = "Changed"
+		with self.assertRaises(AssessmentArchivedError):
+			doc.save()
+
+	def test_cannot_move_question_to_archived_assessment(self):
+		doc = self.make()
+		archived = frappe.get_doc({"doctype": "Assessment", "title": "Archived Assessment"}).insert()
+		archived.archive()
+
+		doc.assessment = archived.name
+		with self.assertRaises(AssessmentArchivedError):
+			doc.save()

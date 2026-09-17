@@ -4,6 +4,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from assessment_hub.exceptions import AssessmentArchivedError
+
 CONTENT_MAX_LENGTH = 10_000
 
 MIN_ANSWERS = 1
@@ -18,6 +20,7 @@ class Question(Document):
 		self.validate_content()
 		self.set_default_status()
 		self.validate_answers()
+		self.validate_assessment_not_archived()
 
 	def validate_content(self):
 		self.content = (self.content or "").strip()
@@ -75,6 +78,22 @@ class Question(Document):
 			return
 
 		self.sort_order = get_next_sort_order(self.assessment)
+
+	def validate_assessment_not_archived(self):
+		if not self.assessment:
+			return
+
+		assessment_status = frappe.db.get_value("Assessment", self.assessment, "status")
+
+		if assessment_status != "Archived":
+			return
+
+		if self.is_new():
+			frappe.throw(_("Cannot add a question to an archived assessment."), AssessmentArchivedError)
+
+		frappe.throw(
+			_("Cannot modify a question that belongs to an archived assessment."), AssessmentArchivedError
+		)
 
 
 def get_next_sort_order(assessment):
