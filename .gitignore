@@ -26,3 +26,5 @@ assessment_hub/public/dist/
 .vscode/
 .idea/
 .DS_Store
+
+*.md

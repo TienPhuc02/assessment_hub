@@ -30,8 +30,11 @@ npm install -g yarn
 uv tool install frappe-bench
 
 # Bench mới
-mkdir frappe-bench && cd frappe-bench
-bench init --frappe-branch version-16 --python "$(which python3.14)" --ignore-exist .
+#  mkdir frappe-bench && cd frappe-bench
+#  bench init --frappe-branch version-16 --python "$(which python3.14)" --ignore-exist .
+cd ~
+bench init --frappe-branch version-16 --python "$(uv python find 3.14)" frappe-bench
+cd frappe-bench
 ```
 
 ### Bước 2. Tạo site
