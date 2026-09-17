@@ -74,8 +74,22 @@ class Question(Document):
 		if self.sort_order:
 			return
 
-		last_sort_order = frappe.db.get_value(
-			"Question", {"assessment": self.assessment}, "sort_order", order_by="sort_order desc"
-		)
+		self.sort_order = get_next_sort_order(self.assessment)
 
-		self.sort_order = (last_sort_order or 0) + 1
+
+def get_next_sort_order(assessment):
+	last_sort_order = frappe.db.get_value(
+		"Question", {"assessment": assessment}, "sort_order", order_by="sort_order desc"
+	)
+
+	return (last_sort_order or 0) + 1
+
+
+@frappe.whitelist()
+def get_suggested_sort_order(assessment):
+	frappe.has_permission("Question", "read", throw=True)
+
+	if not assessment:
+		return 1
+
+	return get_next_sort_order(assessment)

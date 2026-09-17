@@ -1,6 +1,8 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from assessment_hub.assessment_hub.doctype.question.question import get_suggested_sort_order
+
 
 class TestQuestion(IntegrationTestCase):
 	def setUp(self):
@@ -93,3 +95,13 @@ class TestQuestion(IntegrationTestCase):
 	def test_answer_sort_order_cannot_be_negative(self):
 		with self.assertRaises(frappe.ValidationError):
 			self.make(answers=[{"content": "4", "score": 1, "sort_order": -1}])
+
+	def test_suggested_sort_order_is_one_for_a_fresh_assessment(self):
+		self.assertEqual(get_suggested_sort_order(self.assessment.name), 1)
+
+	def test_suggested_sort_order_continues_from_existing_questions(self):
+		self.make()
+		self.assertEqual(get_suggested_sort_order(self.assessment.name), 2)
+
+	def test_suggested_sort_order_without_assessment_is_one(self):
+		self.assertEqual(get_suggested_sort_order(None), 1)

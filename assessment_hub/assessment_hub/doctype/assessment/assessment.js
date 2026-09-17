@@ -1,9 +1,20 @@
 frappe.ui.form.on("Assessment", {
 	refresh(frm) {
 		set_status_buttons(frm);
+		set_add_question_button(frm);
 		set_archived_alert(frm);
 	},
 });
+
+function set_add_question_button(frm) {
+	if (frm.is_new() || frm.doc.status === "Archived" || !frappe.model.can_create("Question")) {
+		return;
+	}
+
+	frm.add_custom_button(__("Add Question"), () => {
+		frappe.new_doc("Question", { assessment: frm.doc.name });
+	});
+}
 
 function set_status_buttons(frm) {
 	if (frm.is_new() || !frm.perm[0].write) {
