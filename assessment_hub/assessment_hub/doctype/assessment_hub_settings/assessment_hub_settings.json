@@ -1,0 +1,81 @@
+{
+ "actions": [],
+ "creation": "2026-09-17 15:50:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "section_api",
+  "default_page_length",
+  "max_page_length",
+  "column_break_api",
+  "default_question_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_api",
+   "fieldtype": "Section Break",
+   "label": "API Defaults"
+  },
+  {
+   "default": "20",
+   "description": "Số bản ghi mặc định mỗi trang khi đối tác không truyền page_length.",
+   "fieldname": "default_page_length",
+   "fieldtype": "Int",
+   "label": "Default Page Length",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "default": "100",
+   "description": "Trần cứng cho page_length. Giá trị lớn hơn sẽ bị từ chối.",
+   "fieldname": "max_page_length",
+   "fieldtype": "Int",
+   "label": "Max Page Length",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_api",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Active",
+   "description": "Trạng thái gán cho Question mới khi không chỉ định.",
+   "fieldname": "default_question_status",
+   "fieldtype": "Select",
+   "label": "Default Question Status",
+   "options": "Active\nInactive",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-17 15:50:00.000000",
+ "modified_by": "Administrator",
+ "module": "Assessment Hub",
+ "name": "Assessment Hub Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Assessment Manager"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
