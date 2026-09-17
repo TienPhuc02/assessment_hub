@@ -1,3 +1,5 @@
+import math
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -36,13 +38,37 @@ class Question(Document):
 		self.status = frappe.db.get_single_value("Assessment Hub Settings", "default_question_status")
 
 	def validate_answers(self):
-		answer_count = len(self.answers or [])
+		answers = self.answers or []
 
-		if not (MIN_ANSWERS <= answer_count <= MAX_ANSWERS):
+		if not (MIN_ANSWERS <= len(answers) <= MAX_ANSWERS):
 			frappe.throw(
 				_("A question must have between {0} and {1} answers.").format(MIN_ANSWERS, MAX_ANSWERS),
 				frappe.ValidationError,
 			)
+
+		for answer in answers:
+			self.validate_answer(answer)
+
+	def validate_answer(self, answer):
+		answer.content = (answer.content or "").strip()
+
+		if not answer.content:
+			frappe.throw(_("Row #{0}: Answer content is required.").format(answer.idx), frappe.ValidationError)
+
+		if (
+			answer.score is None
+			or isinstance(answer.score, bool)
+			or not isinstance(answer.score, int | float)
+		):
+			frappe.throw(_("Row #{0}: Score must be a number.").format(answer.idx), frappe.ValidationError)
+
+		if not math.isfinite(answer.score):
+			frappe.throw(
+				_("Row #{0}: Score must be a finite number.").format(answer.idx), frappe.ValidationError
+			)
+
+		if not answer.sort_order:
+			answer.sort_order = answer.idx
 
 	def set_default_sort_order(self):
 		if self.sort_order:

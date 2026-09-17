@@ -65,3 +65,31 @@ class TestQuestion(IntegrationTestCase):
 		answers = [{"content": f"Answer {i}", "score": 0, "sort_order": i} for i in range(51)]
 		with self.assertRaises(frappe.ValidationError):
 			self.make(answers=answers)
+
+	def test_answer_content_is_required(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.make(answers=[{"content": "   ", "score": 1, "sort_order": 1}])
+
+	def test_answer_content_is_trimmed(self):
+		doc = self.make(answers=[{"content": "  4  ", "score": 1, "sort_order": 1}])
+		self.assertEqual(doc.answers[0].content, "4")
+
+	def test_answer_score_must_be_a_number(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.make(answers=[{"content": "4", "score": "not-a-number", "sort_order": 1}])
+
+	def test_answer_score_cannot_be_a_boolean(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.make(answers=[{"content": "4", "score": True, "sort_order": 1}])
+
+	def test_answer_score_cannot_be_infinite(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.make(answers=[{"content": "4", "score": float("inf"), "sort_order": 1}])
+
+	def test_answer_sort_order_defaults_to_row_position(self):
+		doc = self.make(answers=[{"content": "3", "score": 0}, {"content": "4", "score": 1}])
+		self.assertEqual([row.sort_order for row in doc.answers], [1, 2])
+
+	def test_answer_sort_order_cannot_be_negative(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.make(answers=[{"content": "4", "score": 1, "sort_order": -1}])
