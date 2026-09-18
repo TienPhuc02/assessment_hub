@@ -198,6 +198,29 @@ Test parse AST toàn bộ file `.py` trong app, chặn ngay khi có `frappe.db.s
 f-string, nối chuỗi `+`/`%`, hay `.format()`. Chạy toàn bộ suite (110 test tính tới FR-17 +
 NFR-01) bằng `bench --site dev.localhost run-tests --app assessment_hub`.
 
+## Validate, sanitize input; xử lý DoesNotExistError
+
+`assessment_hub/api/utils.py` có 5 helper dùng chung cho mọi endpoint: `require_str`,
+`parse_int`, `parse_enum`, `parse_bool`, `parse_datetime` — mỗi hàm tự trim, kiểm kiểu chặt (ví
+dụ `parse_int` loại `bool` vì Python coi `bool` là subclass của `int`), và raise đúng exception
+kèm `field` để lỗi trả về đúng hợp đồng `{"errors": [{"field": "..."}]}`. `create_question` dựng
+document bằng dict field cố định, không nhận thẳng tham số lạ từ client — chặn mass assignment.
+
+`frappe.DoesNotExistError` được `api_response` map sẵn thành 404 `NOT_FOUND` cho mọi endpoint
+(bảng mã lỗi ở mục "Định dạng response" bên dưới) — không cần try/except riêng ở từng hàm, `id`
+hay `assessment_id` không tồn tại tự nhiên rơi vào nhánh này dù trigger bằng `frappe.get_doc`
+(raise tự động) hay `frappe.db.exists` + `frappe.throw` (kiểm tồn tại trước khi ghi).
+
+Quy tắc "mọi endpoint whitelist phải bọc `@api_response`" được giữ bằng test tự động:
+
+```bash
+bench --site dev.localhost run-tests --module assessment_hub.tests.test_nfr02_endpoints_validate_input
+```
+
+Test parse AST toàn bộ `assessment_hub/api/v1/*.py`, chặn ngay khi có hàm `@frappe.whitelist`
+thiếu `@api_response` — trường hợp mà lỗi input sai hay record không tồn tại sẽ rò ra ngoài dưới
+định dạng mặc định của Frappe thay vì hợp đồng `{"errors": [...]}`.
+
 ## Partner REST API v1
 
 Đang xây dần theo từng endpoint (FR-14 đến FR-17); phần dưới đây là **hợp đồng chung**, đã cố
