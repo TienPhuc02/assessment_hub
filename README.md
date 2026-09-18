@@ -469,6 +469,24 @@ Sort mặc định `sort_order ASC`, cùng `sort_order` thì `creation ASC`. `it
 key `answers` (khác `get_assessment`/`create_question`) — muốn xem đáp án của một câu hỏi cụ
 thể, dùng `get_assessment?include_questions=1`.
 
+## Giả định và lựa chọn cho các điểm mơ hồ
+
+Đề bài có 10 điểm không nói rõ; mỗi điểm đã chọn một phương án mặc định để không bị chặn khi
+code, liệt kê ở đây để người chấm đối chiếu đúng ý đồ thay vì đoán.
+
+| # | Điểm mơ hồ | Đã chọn | Vì sao / ở đâu trong code |
+| --- | --- | --- | --- |
+| 1 | Assessment chuyển trạng thái nào hợp lệ, Archived mở lại được không? | Draft→Published, Draft→Archived, Published→Archived; Archived là trạng thái cuối, không có đường quay lại Draft | `ALLOWED_TRANSITIONS` trong `assessment.py`; mọi chuyển tiếp khác bị `InvalidStatusTransitionError` |
+| 2 | Được thêm/sửa Question khi Assessment đang Published không? | Được — chỉ chặn khi Assessment đã Archived | `question.py::validate()` chỉ so `assessment_status != "Archived"`, không chặn Published. Rủi ro: đối tác đã đồng bộ bài Published có thể thấy dữ liệu đổi ở lần đồng bộ sau |
+| 3 | Question có bắt buộc ít nhất 1 Answer? | Có, áp dụng cả Desk lẫn API | `MIN_ANSWERS = 1` trong `question.py`, dùng chung ở `create_question` (`api/v1/questions.py`) |
+| 4 | Khoảng giá trị `score` của Answer? | Số thực, cho phép âm (điểm trừ), không giới hạn trên/dưới, chỉ cần là số hữu hạn | `parse_answer()` trong `api/v1/questions.py` dùng `math.isfinite`, không so sánh min/max |
+| 5 | "Lọc tăng dần theo `updated_since`" nghĩa là gì? | Lọc `modified >= updated_since`, đổi sắp xếp sang `modified ASC, name ASC` để đồng bộ gia tăng ổn định | `list_assessments` trong `api/v1/assessments.py` |
+| 6 | Thông tin phân trang đặt ở đâu khi hợp đồng chỉ có `data`? | Trong `data`: `{"items": [...], "pagination": {...}}` | Cả 2 endpoint list (`list_assessments`, `list_questions`) |
+| 7 | API có trả Question ở trạng thái Inactive không? | Có, kèm field `status`; `list_questions` nhận thêm filter `status` tuỳ chọn | `list_questions` trong `api/v1/questions.py` |
+| 8 | Viewer gọi API có thấy Assessment Draft không? | Có — đề cho Viewer quyền Read trên mọi Assessment, không phân biệt status. Nếu cần giới hạn theo đối tác thì dùng User Permission, không hard-code filter status theo role | DocPerm của Assessment trong `assessment.json`; `get_assessment`/`list_assessments` không tự thêm điều kiện status theo role |
+| 9 | Có được xoá Assessment không? | Được, nhưng chỉ Manager/System Manager (DocPerm), và chỉ khi không còn Question liên kết | Không cần code riêng — `Question.assessment` là Link field nên Frappe tự chặn bằng `LinkExistsError`; kiểm bằng `test_cannot_delete_assessment_with_questions` |
+| 10 | `create_question` thành công trả HTTP 200 hay 201? | 200, theo đúng hợp đồng chung "thành công luôn là 200 kèm `data`" ở §9.1 đề bài. Ghi chú: REST chuẩn dùng 201 cho tạo mới, nhưng ở đây ưu tiên một quy ước response duy nhất cho mọi endpoint thay vì rẽ nhánh theo semantics | `api_response` trong `api/utils.py` luôn trả `status=200` khi không có exception |
+
 ## License
 
 MIT, xem [license.txt](license.txt).
