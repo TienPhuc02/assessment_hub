@@ -242,6 +242,23 @@ Một test parse AST chặn `frappe.db.commit()` ở bất kỳ đâu và `frapp
 savepoint xoá luôn dữ liệu đã ghi thành công trước đó trong cùng request). Test còn lại kiểm
 `change_status` vẫn gọi `for_update=True` trước khi so transition.
 
+## Git hygiene
+
+`.gitignore` chặn `*.pyc`, `__pycache__/`, `node_modules/`, `*.log`, `*.sql`, `*.sql.gz`,
+`site_config.json`, `.env`, `*.pem`, `*.key`, `backups/`. Audit toàn bộ lịch sử git (tên file
+từng commit, nội dung patch, kích thước blob) không phát hiện secret, log, hay backup nào từng
+lọt vào repo.
+
+`.gitignore` chỉ chặn theo tên file, không đọc nội dung — một file tên hợp lệ vẫn có thể chứa
+secret hard-code. Thêm hook [`detect-secrets`](https://github.com/Yelp/detect-secrets) vào
+`.pre-commit-config.yaml` để quét nội dung mỗi lần commit, với `.secrets.baseline` ghi nhận 1
+false positive đã biết (một `id` mẫu trong response JSON ở README, không phải secret thật):
+
+```bash
+pre-commit install
+pre-commit run detect-secrets --all-files
+```
+
 ## Partner REST API v1
 
 Đang xây dần theo từng endpoint (FR-14 đến FR-17); phần dưới đây là **hợp đồng chung**, đã cố
