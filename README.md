@@ -221,6 +221,27 @@ Test parse AST toàn bộ `assessment_hub/api/v1/*.py`, chặn ngay khi có hàm
 thiếu `@api_response` — trường hợp mà lỗi input sai hay record không tồn tại sẽ rò ra ngoài dưới
 định dạng mặc định của Frappe thay vì hợp đồng `{"errors": [...]}`.
 
+## Transaction an toàn cho ghi dữ liệu lồng nhau
+
+Question và Answers ghi trong 1 lần `doc.insert()` nhờ Answer là Child Table (ADR-01) — atomic
+tự nhiên, không có trạng thái nửa vời. `create_question` được `@api_response` bọc savepoint
+(`frappe.db.savepoint("api_response")` trước khi gọi hàm nghiệp vụ, rollback đúng savepoint đó
+khi lỗi) — không endpoint nào tự quản lý transaction. Publish/Archive
+(`Assessment.change_status`) tự `frappe.get_doc(..., for_update=True)` để khoá row trước khi
+kiểm transition, tránh 2 request cùng lúc ghi đè nhau. Không có `frappe.db.commit()` nào trong
+code sản phẩm — Frappe tự commit khi request kết thúc thành công.
+
+Giữ bằng 2 test tự động:
+
+```bash
+bench --site dev.localhost run-tests --module assessment_hub.tests.test_nfr03_atomic_writes
+```
+
+Một test parse AST chặn `frappe.db.commit()` ở bất kỳ đâu và `frappe.db.rollback()` ở ngoài
+`api/utils.py` hoặc thiếu `save_point` — đúng lớp lỗi từng xảy ra thật ở FR-16 (rollback không
+savepoint xoá luôn dữ liệu đã ghi thành công trước đó trong cùng request). Test còn lại kiểm
+`change_status` vẫn gọi `for_update=True` trước khi so transition.
+
 ## Partner REST API v1
 
 Đang xây dần theo từng endpoint (FR-14 đến FR-17); phần dưới đây là **hợp đồng chung**, đã cố
