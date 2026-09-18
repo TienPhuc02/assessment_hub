@@ -180,6 +180,24 @@ Hai lớp độc lập, không chỉ dựa vào một chỗ:
 
 Kiểm bằng payload `<img src=x onerror=alert(1)>` ở title/content/answer content.
 
+## Không SQL nối chuỗi
+
+Mọi truy vấn đi qua `frappe.get_list`/`frappe.get_doc` (tự áp permission) hoặc `frappe.qb`
+(query builder, không nối chuỗi) — `assessment_hub/api/v1/serializers.py` là nơi duy nhất dùng
+`frappe.qb`, để gom Answer của nhiều Question trong 1 truy vấn thay vì lặp N+1. Codebase hiện
+không có `frappe.db.sql` nào; nếu buộc phải dùng ở một endpoint tương lai, tham số phải truyền
+qua `%(name)s` + dict, không f-string/`.format()`/nối chuỗi trực tiếp giá trị vào câu lệnh.
+
+Quy tắc này được giữ bằng test tự động, không chỉ audit thủ công trước khi nộp:
+
+```bash
+bench --site dev.localhost run-tests --module assessment_hub.tests.test_nfr01_no_raw_sql
+```
+
+Test parse AST toàn bộ file `.py` trong app, chặn ngay khi có `frappe.db.sql` được dựng bằng
+f-string, nối chuỗi `+`/`%`, hay `.format()`. Chạy toàn bộ suite (110 test tính tới FR-17 +
+NFR-01) bằng `bench --site dev.localhost run-tests --app assessment_hub`.
+
 ## Partner REST API v1
 
 Đang xây dần theo từng endpoint (FR-14 đến FR-17); phần dưới đây là **hợp đồng chung**, đã cố
