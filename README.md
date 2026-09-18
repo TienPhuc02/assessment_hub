@@ -165,100 +165,6 @@ của Question nữa.
 
 **Đánh đổi.** Phải kiểm tra Link và phân quyền ở cả hai DocType thay vì một.
 
-## Chống XSS trên Desk
-
-Hai lớp độc lập, không chỉ dựa vào một chỗ:
-
-1. **Server (Frappe core, không phải code của app).** Mọi field kiểu Data/Small Text/Text
-   (trừ Email, Attach, Barcode, Code) tự động chạy qua `sanitize_html()` trước khi ghi vào
-   database (`Document._validate()` → `_sanitize_content()`), xoá attribute như `onerror`,
-   `onclick` bằng allowlist. `title`, `content` (Question/Answer) đều thuộc nhóm này — đây là
-   lý do ADR-04 chọn Small Text thay vì Text Editor.
-2. **Client (`assessment.js`).** Giá trị người dùng ghép vào `frappe.confirm`/`__()` (ví dụ
-   title khi hỏi xác nhận Publish/Archive) đi qua `frappe.utils.escape_html()` trước, vì `__()`
-   không tự escape tham số.
-
-Kiểm bằng payload `<img src=x onerror=alert(1)>` ở title/content/answer content.
-
-## Không SQL nối chuỗi
-
-Mọi truy vấn đi qua `frappe.get_list`/`frappe.get_doc` (tự áp permission) hoặc `frappe.qb`
-(query builder, không nối chuỗi) — `assessment_hub/api/v1/serializers.py` là nơi duy nhất dùng
-`frappe.qb`, để gom Answer của nhiều Question trong 1 truy vấn thay vì lặp N+1. Codebase hiện
-không có `frappe.db.sql` nào; nếu buộc phải dùng ở một endpoint tương lai, tham số phải truyền
-qua `%(name)s` + dict, không f-string/`.format()`/nối chuỗi trực tiếp giá trị vào câu lệnh.
-
-Quy tắc này được giữ bằng test tự động, không chỉ audit thủ công trước khi nộp:
-
-```bash
-bench --site dev.localhost run-tests --module assessment_hub.tests.test_nfr01_no_raw_sql
-```
-
-Test parse AST toàn bộ file `.py` trong app, chặn ngay khi có `frappe.db.sql` được dựng bằng
-f-string, nối chuỗi `+`/`%`, hay `.format()`. Chạy toàn bộ suite (110 test tính tới FR-17 +
-NFR-01) bằng `bench --site dev.localhost run-tests --app assessment_hub`.
-
-## Validate, sanitize input; xử lý DoesNotExistError
-
-`assessment_hub/api/utils.py` có 5 helper dùng chung cho mọi endpoint: `require_str`,
-`parse_int`, `parse_enum`, `parse_bool`, `parse_datetime` — mỗi hàm tự trim, kiểm kiểu chặt (ví
-dụ `parse_int` loại `bool` vì Python coi `bool` là subclass của `int`), và raise đúng exception
-kèm `field` để lỗi trả về đúng hợp đồng `{"errors": [{"field": "..."}]}`. `create_question` dựng
-document bằng dict field cố định, không nhận thẳng tham số lạ từ client — chặn mass assignment.
-
-`frappe.DoesNotExistError` được `api_response` map sẵn thành 404 `NOT_FOUND` cho mọi endpoint
-(bảng mã lỗi ở mục "Định dạng response" bên dưới) — không cần try/except riêng ở từng hàm, `id`
-hay `assessment_id` không tồn tại tự nhiên rơi vào nhánh này dù trigger bằng `frappe.get_doc`
-(raise tự động) hay `frappe.db.exists` + `frappe.throw` (kiểm tồn tại trước khi ghi).
-
-Quy tắc "mọi endpoint whitelist phải bọc `@api_response`" được giữ bằng test tự động:
-
-```bash
-bench --site dev.localhost run-tests --module assessment_hub.tests.test_nfr02_endpoints_validate_input
-```
-
-Test parse AST toàn bộ `assessment_hub/api/v1/*.py`, chặn ngay khi có hàm `@frappe.whitelist`
-thiếu `@api_response` — trường hợp mà lỗi input sai hay record không tồn tại sẽ rò ra ngoài dưới
-định dạng mặc định của Frappe thay vì hợp đồng `{"errors": [...]}`.
-
-## Transaction an toàn cho ghi dữ liệu lồng nhau
-
-Question và Answers ghi trong 1 lần `doc.insert()` nhờ Answer là Child Table (ADR-01) — atomic
-tự nhiên, không có trạng thái nửa vời. `create_question` được `@api_response` bọc savepoint
-(`frappe.db.savepoint("api_response")` trước khi gọi hàm nghiệp vụ, rollback đúng savepoint đó
-khi lỗi) — không endpoint nào tự quản lý transaction. Publish/Archive
-(`Assessment.change_status`) tự `frappe.get_doc(..., for_update=True)` để khoá row trước khi
-kiểm transition, tránh 2 request cùng lúc ghi đè nhau. Không có `frappe.db.commit()` nào trong
-code sản phẩm — Frappe tự commit khi request kết thúc thành công.
-
-Giữ bằng 2 test tự động:
-
-```bash
-bench --site dev.localhost run-tests --module assessment_hub.tests.test_nfr03_atomic_writes
-```
-
-Một test parse AST chặn `frappe.db.commit()` ở bất kỳ đâu và `frappe.db.rollback()` ở ngoài
-`api/utils.py` hoặc thiếu `save_point` — đúng lớp lỗi từng xảy ra thật ở FR-16 (rollback không
-savepoint xoá luôn dữ liệu đã ghi thành công trước đó trong cùng request). Test còn lại kiểm
-`change_status` vẫn gọi `for_update=True` trước khi so transition.
-
-## Git hygiene
-
-`.gitignore` chặn `*.pyc`, `__pycache__/`, `node_modules/`, `*.log`, `*.sql`, `*.sql.gz`,
-`site_config.json`, `.env`, `*.pem`, `*.key`, `backups/`. Audit toàn bộ lịch sử git (tên file
-từng commit, nội dung patch, kích thước blob) không phát hiện secret, log, hay backup nào từng
-lọt vào repo.
-
-`.gitignore` chỉ chặn theo tên file, không đọc nội dung — một file tên hợp lệ vẫn có thể chứa
-secret hard-code. Thêm hook [`detect-secrets`](https://github.com/Yelp/detect-secrets) vào
-`.pre-commit-config.yaml` để quét nội dung mỗi lần commit, với `.secrets.baseline` ghi nhận 1
-false positive đã biết (một `id` mẫu trong response JSON ở README, không phải secret thật):
-
-```bash
-pre-commit install
-pre-commit run detect-secrets --all-files
-```
-
 ## Partner REST API v1
 
 Đang xây dần theo từng endpoint (FR-14 đến FR-17); phần dưới đây là **hợp đồng chung**, đã cố
@@ -468,24 +374,6 @@ curl -H "Authorization: token <api_key>:<api_secret>" \
 Sort mặc định `sort_order ASC`, cùng `sort_order` thì `creation ASC`. `items` **không có**
 key `answers` (khác `get_assessment`/`create_question`) — muốn xem đáp án của một câu hỏi cụ
 thể, dùng `get_assessment?include_questions=1`.
-
-## Giả định và lựa chọn cho các điểm mơ hồ
-
-Đề bài có 10 điểm không nói rõ; mỗi điểm đã chọn một phương án mặc định để không bị chặn khi
-code, liệt kê ở đây để người chấm đối chiếu đúng ý đồ thay vì đoán.
-
-| # | Điểm mơ hồ | Đã chọn | Vì sao / ở đâu trong code |
-| --- | --- | --- | --- |
-| 1 | Assessment chuyển trạng thái nào hợp lệ, Archived mở lại được không? | Draft→Published, Draft→Archived, Published→Archived; Archived là trạng thái cuối, không có đường quay lại Draft | `ALLOWED_TRANSITIONS` trong `assessment.py`; mọi chuyển tiếp khác bị `InvalidStatusTransitionError` |
-| 2 | Được thêm/sửa Question khi Assessment đang Published không? | Được — chỉ chặn khi Assessment đã Archived | `question.py::validate()` chỉ so `assessment_status != "Archived"`, không chặn Published. Rủi ro: đối tác đã đồng bộ bài Published có thể thấy dữ liệu đổi ở lần đồng bộ sau |
-| 3 | Question có bắt buộc ít nhất 1 Answer? | Có, áp dụng cả Desk lẫn API | `MIN_ANSWERS = 1` trong `question.py`, dùng chung ở `create_question` (`api/v1/questions.py`) |
-| 4 | Khoảng giá trị `score` của Answer? | Số thực, cho phép âm (điểm trừ), không giới hạn trên/dưới, chỉ cần là số hữu hạn | `parse_answer()` trong `api/v1/questions.py` dùng `math.isfinite`, không so sánh min/max |
-| 5 | "Lọc tăng dần theo `updated_since`" nghĩa là gì? | Lọc `modified >= updated_since`, đổi sắp xếp sang `modified ASC, name ASC` để đồng bộ gia tăng ổn định | `list_assessments` trong `api/v1/assessments.py` |
-| 6 | Thông tin phân trang đặt ở đâu khi hợp đồng chỉ có `data`? | Trong `data`: `{"items": [...], "pagination": {...}}` | Cả 2 endpoint list (`list_assessments`, `list_questions`) |
-| 7 | API có trả Question ở trạng thái Inactive không? | Có, kèm field `status`; `list_questions` nhận thêm filter `status` tuỳ chọn | `list_questions` trong `api/v1/questions.py` |
-| 8 | Viewer gọi API có thấy Assessment Draft không? | Có — đề cho Viewer quyền Read trên mọi Assessment, không phân biệt status. Nếu cần giới hạn theo đối tác thì dùng User Permission, không hard-code filter status theo role | DocPerm của Assessment trong `assessment.json`; `get_assessment`/`list_assessments` không tự thêm điều kiện status theo role |
-| 9 | Có được xoá Assessment không? | Được, nhưng chỉ Manager/System Manager (DocPerm), và chỉ khi không còn Question liên kết | Không cần code riêng — `Question.assessment` là Link field nên Frappe tự chặn bằng `LinkExistsError`; kiểm bằng `test_cannot_delete_assessment_with_questions` |
-| 10 | `create_question` thành công trả HTTP 200 hay 201? | 200, theo đúng hợp đồng chung "thành công luôn là 200 kèm `data`" ở §9.1 đề bài. Ghi chú: REST chuẩn dùng 201 cho tạo mới, nhưng ở đây ưu tiên một quy ước response duy nhất cho mọi endpoint thay vì rẽ nhánh theo semantics | `api_response` trong `api/utils.py` luôn trả `status=200` khi không có exception |
 
 ## License
 
